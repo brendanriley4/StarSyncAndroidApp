@@ -108,7 +108,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Check if the Bluetooth connection is active and reconnect if not
+        if (!bluetoothService.isConnected()) {
+            Log.d(TAG, "Reconnecting to device...")
+            initializeBluetoothService()
+        }
+    }
+
     private fun initializeBluetoothService() {
+        if (bluetoothService.isConnected()) {
+            Log.d(TAG, "Already connected. No need to reconnect.")
+            return
+        }
         bluetoothService = BluetoothService(this)
         // Connect to the device, consider moving this to after permissions are granted
         val microcontrollerAddress: String = "98:D3:02:96:A2:05"
