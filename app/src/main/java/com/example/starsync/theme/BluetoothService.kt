@@ -120,6 +120,11 @@ class BluetoothService(private val context : Context) {
         }
     }
 
+    fun isConnected(): Boolean {
+        return bluetoothSocket?.isConnected == true
+        Log.d(TAG, "isConnected() called")
+    }
+
     fun disconnect() {
         coroutineScope.launch {
             try {
