@@ -110,10 +110,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Check if the Bluetooth connection is active and reconnect if not
-        if (!bluetoothService.isConnected()) {
-            Log.d(TAG, "Reconnecting to device...")
-            initializeBluetoothService()
+        // Check if the Bluetooth connection is active and reconnect if not, only if the app is ready, IE permissions have been approved
+        if (isAppReady.value) {
+            if (!bluetoothService.isConnected()) {
+                Log.d(TAG, "Reconnecting to device...")
+                initializeBluetoothService()
+            }
         }
     }
 
