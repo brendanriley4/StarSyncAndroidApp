@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -211,8 +213,8 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
 
     val TAG = "MainScreen"
 
-    // Define a state to hold the received message
-    var receivedMessage by remember { mutableStateOf<String?>(null) }
+    // Define a state to hold the list of received messages
+    var receivedMessages by remember { mutableStateOf(listOf<String>()) }
 
     val latitude = latitudeState.value
     val longitude = longitudeState.value
@@ -310,7 +312,9 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
                     bluetoothService.sendData(modeCommand)
                     Log.d(TAG, "called sendData() - H")
                     bluetoothService.receiveData { message ->
-                        receivedMessage = message }
+                        // Append new message to the list
+                        receivedMessages = receivedMessages + message
+                    }
                     Log.d(TAG, "called ReceiveData() - H")
                 }
                 if (modeCommand == "S"){
@@ -324,11 +328,6 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
             }
         }) {
             Text("Send Mode")
-        }
-
-        // Display the received message if not null
-        receivedMessage?.let {
-            Text("Received: $it")
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -354,8 +353,12 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
         
         Text(text = "Received Bluetooth Data:")
         Spacer(modifier = Modifier.height(4.dp))
-        receivedMessage?.let {
-            Text(text = "Received Data: $it")
+
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(receivedMessages) { message ->
+                Text(text = message,
+                    modifier = Modifier.padding(8.dp))
+            }
         }
     }
 }
