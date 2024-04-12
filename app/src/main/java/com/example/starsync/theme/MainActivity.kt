@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,12 +57,18 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
+        fun formatPointingData(value: Double): String {
+            val integerPart = value.toInt().toString().padStart(3, '0')
+            val decimalPart = ((value - value.toInt()) * 10000).toInt().toString().padStart(4, '0')
+            return "$integerPart.$decimalPart"
+        }
     }
 
     // Global variables to store location
     private var userLatitude = mutableStateOf<Double?>(null)
     private var userLongitude = mutableStateOf<Double?>(null)
     private var userAltitude = mutableStateOf<Double?>(null)
+
 
 
     private val requestMultiplePermissionsLauncher =
@@ -110,8 +118,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Check if the Bluetooth connection is active and reconnect if not, only if the app is ready, IE permissions have been approved
-        if (isAppReady.value) {
+        if (::bluetoothService.isInitialized && isAppReady.value) {
             if (!bluetoothService.isConnected()) {
                 Log.d(TAG, "Reconnecting to device...")
                 initializeBluetoothService()
@@ -119,17 +126,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
     private fun initializeBluetoothService() {
+        // Initialize the bluetoothService before trying to access any of its methods
+        bluetoothService = BluetoothService(this)
+
+        // Now it's safe to check if it's connected
         if (bluetoothService.isConnected()) {
             Log.d(TAG, "Already connected. No need to reconnect.")
             return
         }
-        bluetoothService = BluetoothService(this)
-        // Connect to the device, consider moving this to after permissions are granted
+
+        // Connect to the device, ensure permissions are granted before this step
         val microcontrollerAddress: String = "98:D3:02:96:A2:05"
         bluetoothService.connectToDevice(microcontrollerAddress)
         isAppReady.value = true
     }
+
 
     private fun getLocation() {
         val locationManager: LocationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -211,8 +224,8 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
 
     val TAG = "MainScreen"
 
-    // Define a state to hold the received message
-    var receivedMessage by remember { mutableStateOf<String?>(null) }
+    // Define a state to hold the list of received messages
+    var receivedMessages by remember { mutableStateOf(listOf<String>()) }
 
     val latitude = latitudeState.value
     val longitude = longitudeState.value
@@ -289,9 +302,9 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
         Button(onClick = {
             val modeCommand = when (selectedMode.value) {
                 "Pointing" -> "P"
-                "Health" -> "H"
-                "Standby" -> "S"
-                "Calibration" -> "C"
+                "Health" -> "H\n"
+                "Standby" -> "S\n"
+                "Calibration" -> "C\n"
                 else -> ""
             }
             if (modeCommand.isNotEmpty()) {
@@ -301,34 +314,33 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
                     val retrievedStarData =
                         getStarData(id!!, latitude!!, longitude!!)
                     // Serialize star data into a simple string format
-                    val starDataString = "P$${String.format("%07.4f", retrievedStarData.altitude)}${String.format("%07.4f", retrievedStarData.azimuth)}"
+                    val formattedAltitude = MainActivity.formatPointingData(retrievedStarData.altitude)
+                    val formattedAzimuth = MainActivity.formatPointingData(retrievedStarData.azimuth)
+                    val starDataString = "P$formattedAltitude$formattedAzimuth\n"
+                    // val starDataString = "P${String.format("%07.4f", retrievedStarData.altitude)}${String.format("%07.4f", retrievedStarData.azimuth)}"
                     // Send serialized data over Bluetooth
                     bluetoothService.sendData(starDataString)
                     Log.d(TAG, "called sendData() - P")
                 }
-                if (modeCommand == "H"){
+                if (modeCommand == "H\n"){
                     bluetoothService.sendData(modeCommand)
                     Log.d(TAG, "called sendData() - H")
                     bluetoothService.receiveData { message ->
-                        receivedMessage = message }
+                        receivedMessages = receivedMessages + message
+                    }
                     Log.d(TAG, "called ReceiveData() - H")
                 }
-                if (modeCommand == "S"){
+                if (modeCommand == "S\n"){
                     bluetoothService.sendData(modeCommand)
                     Log.d(TAG, "called sendData() - S")
                 }
-                if (modeCommand == "C"){
+                if (modeCommand == "C\n"){
                     bluetoothService.sendData(modeCommand)
                     Log.d(TAG, "called sendData() - C")
                 }
             }
         }) {
             Text("Send Mode")
-        }
-
-        // Display the received message if not null
-        receivedMessage?.let {
-            Text("Received: $it")
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -354,8 +366,14 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
         
         Text(text = "Received Bluetooth Data:")
         Spacer(modifier = Modifier.height(4.dp))
-        receivedMessage?.let {
-            Text(text = "Received Data: $it")
+
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(receivedMessages) { message ->
+                Text(
+                    text = message,
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
         }
     }
 }
