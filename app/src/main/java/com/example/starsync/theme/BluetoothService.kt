@@ -11,7 +11,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
 import java.util.*
 
@@ -25,7 +24,7 @@ class BluetoothService(private val context : Context) {
     private val TAG = "Bluetooth Service"
 
     @SuppressLint("MissingPermission")
-    fun connectToDevice(deviceAddress: String) {
+    fun connectToDevice(deviceAddress: String, onConnected: () -> Unit) {
         coroutineScope.launch {
             if (bluetoothAdapter == null) {
                 // Bluetooth not supported on this device
@@ -38,6 +37,7 @@ class BluetoothService(private val context : Context) {
                 // Connection successful
                 // You could launch another coroutine here to listen for incoming data
                 Log.d(TAG, "connectToDevice() try block successful")
+                onConnected()
             } catch (e: IOException) {
                 // Connection failed
                 Log.e(TAG, "Connection failed: ${e.message}")
@@ -93,29 +93,20 @@ class BluetoothService(private val context : Context) {
                 Log.e(TAG, "receiveData() failed: BluetoothSocket is not connected")
                 return@launch
             }
-            val listeningDurationMillis: Long = 10_000
-            val result = withTimeoutOrNull(listeningDurationMillis) {
-                try {
-                    val inputStream = bluetoothSocket?.inputStream ?: return@withTimeoutOrNull
-                    val buffer = ByteArray(1024) // Adjust buffer size as needed
-                    while (isActive) { // Continuously listen for messages, but now with an escape hatch
-                        val bytes = inputStream.read(buffer)
+            try {
+                val inputStream = bluetoothSocket?.inputStream ?: return@launch
+                val buffer = ByteArray(1024) // Adjust buffer size as needed
+                while (isActive) {
+                    val bytes = inputStream.read(buffer)
+                    if (bytes > 0) {
                         val incomingMessage = String(buffer, 0, bytes)
                         onDataReceived(incomingMessage) // Use the received data
-                        Log.d(TAG, "receiveData() try block successful")
+                        Log.d(TAG, "Received: $incomingMessage")
                     }
-                } catch (e: IOException) {
-                    // Error occurred when receiving data
-                    Log.e(TAG, "receiveData() failed IOException: ${e.message}")
-                    // This is a good place to handle reconnection or notify the user/UI thread
                 }
-                catch (e: Exception) {
-                    // Catch any other unexpected exceptions
-                    Log.e(TAG, "receiveData() failed: Exception ${e.message}")
-                }
-            }
-            if (result == null) {
-                Log.d(TAG, "Listening stopped due to timeout.")
+            } catch (e: IOException) {
+                Log.e(TAG, "Error receiving data: ${e.message}")
+                // Handle disconnection or other errors here
             }
         }
     }

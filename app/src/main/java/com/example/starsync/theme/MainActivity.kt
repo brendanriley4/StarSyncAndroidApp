@@ -32,9 +32,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -47,6 +49,8 @@ import androidx.core.app.ActivityCompat
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import com.example.starsync.theme.ui.StarSyncTheme
+import android.hardware.GeomagneticField
+
 
 
 class MainActivity : ComponentActivity() {
@@ -134,12 +138,24 @@ class MainActivity : ComponentActivity() {
         // Now it's safe to check if it's connected
         if (bluetoothService.isConnected()) {
             Log.d(TAG, "Already connected. No need to reconnect.")
+            // Start listening for data as soon as you confirm the connection is active
+            bluetoothService.receiveData { message ->
+                // You can handle the received data here, e.g., update UI or process data
+                Log.d(TAG, "Received data: $message")
+            }
             return
         }
 
         // Connect to the device, ensure permissions are granted before this step
         val microcontrollerAddress: String = "98:D3:02:96:A2:05"
-        bluetoothService.connectToDevice(microcontrollerAddress)
+        bluetoothService.connectToDevice(microcontrollerAddress) {
+            // This callback could be part of an enhanced connectToDevice function that includes a lambda for what to do on successful connection
+            Log.d(TAG, "Connection successful, start listening for data")
+            bluetoothService.receiveData { message ->
+                // Again, handle the received data here
+                Log.d(TAG, "Received data: $message")
+            }
+        }
         isAppReady.value = true
     }
 
@@ -152,10 +168,30 @@ class MainActivity : ComponentActivity() {
                 userLatitude.value = it.latitude
                 userLongitude.value = it.longitude
                 userAltitude.value = it.altitude
-                // Use the location coordinates as necessary
+
+                // Create an instance of GeomagneticField
+                val geomagneticField = GeomagneticField(
+                    it.latitude.toFloat(),
+                    it.longitude.toFloat(),
+                    it.altitude.toFloat(),
+                    System.currentTimeMillis()
+                )
+
+                // Now you can get the magnetic field data
+                val declination = geomagneticField.declination
+                val inclination = geomagneticField.inclination
+                val fieldStrength = geomagneticField.fieldStrength
+
+                // You could store these values similarly, or use them directly as needed
+                Log.d("Geomagnetic Data", "Declination: $declination, Inclination: $inclination, Field Strength: $fieldStrength")
+
+                // Optionally, update UI or other components with this data
             } ?: run {
                 Toast.makeText(this, "Location not available", Toast.LENGTH_LONG).show()
             }
+        } else {
+            // Prompt user to grant location permission
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 1)
         }
     }
 
@@ -225,8 +261,18 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
     val TAG = "MainScreen"
 
     // Define a state to hold the list of received messages
-    var receivedMessages by remember { mutableStateOf(listOf<String>()) }
+    val receivedMessages = remember { mutableStateListOf<String>() }
 
+    DisposableEffect(Unit) {
+        val onDataReceived: (String) -> Unit = { message ->
+            receivedMessages.add(message)
+        }
+        bluetoothService.receiveData(onDataReceived)
+
+        onDispose {
+            // Clean up actions if needed when the composable leaves the composition
+        }
+    }
     val latitude = latitudeState.value
     val longitude = longitudeState.value
     val altitude = altitudeState.value
@@ -325,10 +371,6 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
                 if (modeCommand == "H\n"){
                     bluetoothService.sendData(modeCommand)
                     Log.d(TAG, "called sendData() - H")
-                    bluetoothService.receiveData { message ->
-                        receivedMessages = receivedMessages + message
-                    }
-                    Log.d(TAG, "called ReceiveData() - H")
                 }
                 if (modeCommand == "S\n"){
                     bluetoothService.sendData(modeCommand)
