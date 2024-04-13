@@ -316,7 +316,7 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
                     // Serialize star data into a simple string format
                     val formattedAltitude = MainActivity.formatPointingData(retrievedStarData.altitude)
                     val formattedAzimuth = MainActivity.formatPointingData(retrievedStarData.azimuth)
-                    val starDataString = "P$formattedAltitude$formattedAzimuth\n"
+                    val starDataString = "P$formattedAltitude,$formattedAzimuth\n"
                     // val starDataString = "P${String.format("%07.4f", retrievedStarData.altitude)}${String.format("%07.4f", retrievedStarData.azimuth)}"
                     // Send serialized data over Bluetooth
                     bluetoothService.sendData(starDataString)
