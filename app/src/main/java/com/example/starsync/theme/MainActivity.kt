@@ -51,6 +51,7 @@ import com.example.starsync.theme.ui.StarSyncTheme
 import android.hardware.GeomagneticField
 import androidx.compose.foundation.lazy.*
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 
 
 class MainActivity : ComponentActivity() {
@@ -83,17 +84,6 @@ class MainActivity : ComponentActivity() {
             // Check if both permissions are granted or not
             val locationPermissionGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
             val bluetoothConnectPermissionGranted = permissions[Manifest.permission.BLUETOOTH_CONNECT] ?: false
-
-            if (locationPermissionGranted && bluetoothConnectPermissionGranted) {
-                // Location and bluetooth permission is granted
-                getLocation()
-                initializeBluetoothService()
-                Log.d(TAG, "getLocation() and initializeBluetoothService() called")
-            } else {
-                // Explain to the user that the feature is unavailable because the
-                // feature requires a permission that the user has denied.
-                Toast.makeText(this, "Location and Bluetooth permissions are required", Toast.LENGTH_LONG).show()
-            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -103,6 +93,8 @@ class MainActivity : ComponentActivity() {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BLUETOOTH_CONNECT)
         )
         Log.d(TAG, "requestMultiplePermissionsLauncher called")
+        initializeBluetoothService()
+        getLocation()
 
         // Set the content of the activity to the MainScreen composable
         setContent {
@@ -128,6 +120,8 @@ class MainActivity : ComponentActivity() {
                 initializeBluetoothService()
             }
         }
+        Log.d(TAG, "getLocation() and initializeBluetoothService() called")
+
     }
 
     override fun onResume() {
@@ -164,7 +158,10 @@ class MainActivity : ComponentActivity() {
         Log.d("getLocation", "Entered getLocation()")
         val locationManager: LocationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            val location: Location? = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            var location: Location? = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            if (location == null){
+                location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            }
             location?.let {
                 userLatitude.value = it.latitude
                 userLongitude.value = it.longitude
@@ -183,11 +180,12 @@ class MainActivity : ComponentActivity() {
 
                 // Now you can get the magnetic field data
                 xField.value = geomagneticField.x
-                xField.value = geomagneticField.y
-                xField.value = geomagneticField.z
+                yField.value = geomagneticField.y
+                zField.value = geomagneticField.z
 
                 // You could store these values similarly, or use them directly as needed
                 Log.d("Geomagnetic Data", "Declination: $xField, Inclination: $yField, Field Strength: $zField")
+                bluetoothService.sendData("M$xField,$yField,$zField")
 
             }
         } else {
