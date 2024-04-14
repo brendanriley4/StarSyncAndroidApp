@@ -57,7 +57,6 @@ chaquopy {
             install 'sgp4'
             install 'jplephem'
             install 'pandas'
-            install 'pyquaternion'
             install 'numpy'
         }
     }

@@ -13,6 +13,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.util.*
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+
 
 
 class BluetoothService(private val context : Context) {
@@ -89,10 +92,6 @@ class BluetoothService(private val context : Context) {
                 Log.e(TAG, "receiveData() failed: BluetoothSocket is null")
                 return@launch
             }
-            if (!bluetoothSocket!!.isConnected) {
-                Log.e(TAG, "receiveData() failed: BluetoothSocket is not connected")
-                return@launch
-            }
             try {
                 val inputStream = bluetoothSocket?.inputStream ?: return@launch
                 val buffer = ByteArray(1024) // Adjust buffer size as needed
@@ -100,7 +99,9 @@ class BluetoothService(private val context : Context) {
                     val bytes = inputStream.read(buffer)
                     if (bytes > 0) {
                         val incomingMessage = String(buffer, 0, bytes)
-                        onDataReceived(incomingMessage) // Use the received data
+                        withContext(Dispatchers.Main) {
+                            onDataReceived(incomingMessage) // This now runs on the main thread
+                        }
                         Log.d(TAG, "Received: $incomingMessage")
                     }
                 }

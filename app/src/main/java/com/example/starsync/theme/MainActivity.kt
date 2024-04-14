@@ -15,7 +15,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -50,7 +49,8 @@ import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import com.example.starsync.theme.ui.StarSyncTheme
 import android.hardware.GeomagneticField
-
+import androidx.compose.foundation.lazy.*
+import androidx.compose.runtime.LaunchedEffect
 
 
 class MainActivity : ComponentActivity() {
@@ -72,6 +72,9 @@ class MainActivity : ComponentActivity() {
     private var userLatitude = mutableStateOf<Double?>(null)
     private var userLongitude = mutableStateOf<Double?>(null)
     private var userAltitude = mutableStateOf<Double?>(null)
+    private var xField = mutableStateOf<Float?>(null)
+    private var yField = mutableStateOf<Float?>(null)
+    private var zField = mutableStateOf<Float?>(null)
 
 
 
@@ -109,13 +112,20 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     if (isAppReady.value) {
-                        MainScreen(userLatitude, userLongitude, userAltitude, bluetoothService)
+                        MainScreen(userLatitude, userLongitude, userAltitude, xField, yField,
+                            zField, bluetoothService)
                         Log.d(TAG, "MainScreen() called")
                     } else {
                         // Show a loading or placeholder screen
                         CircularProgressIndicator() // Or another appropriate widget
                     }
                 }
+            }
+        }
+        if (::bluetoothService.isInitialized && isAppReady.value) {
+            if (!bluetoothService.isConnected()) {
+                Log.d(TAG, "Reconnecting to device...")
+                initializeBluetoothService()
             }
         }
     }
@@ -138,12 +148,6 @@ class MainActivity : ComponentActivity() {
         // Now it's safe to check if it's connected
         if (bluetoothService.isConnected()) {
             Log.d(TAG, "Already connected. No need to reconnect.")
-            // Start listening for data as soon as you confirm the connection is active
-            bluetoothService.receiveData { message ->
-                // You can handle the received data here, e.g., update UI or process data
-                Log.d(TAG, "Received data: $message")
-            }
-            return
         }
 
         // Connect to the device, ensure permissions are granted before this step
@@ -151,16 +155,13 @@ class MainActivity : ComponentActivity() {
         bluetoothService.connectToDevice(microcontrollerAddress) {
             // This callback could be part of an enhanced connectToDevice function that includes a lambda for what to do on successful connection
             Log.d(TAG, "Connection successful, start listening for data")
-            bluetoothService.receiveData { message ->
-                // Again, handle the received data here
-                Log.d(TAG, "Received data: $message")
-            }
         }
         isAppReady.value = true
     }
 
 
     private fun getLocation() {
+        Log.d("getLocation", "Entered getLocation()")
         val locationManager: LocationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             val location: Location? = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
@@ -168,6 +169,9 @@ class MainActivity : ComponentActivity() {
                 userLatitude.value = it.latitude
                 userLongitude.value = it.longitude
                 userAltitude.value = it.altitude
+
+
+                Log.d("getLocation", "$userLatitude $userLongitude $userAltitude")
 
                 // Create an instance of GeomagneticField
                 val geomagneticField = GeomagneticField(
@@ -178,20 +182,18 @@ class MainActivity : ComponentActivity() {
                 )
 
                 // Now you can get the magnetic field data
-                val declination = geomagneticField.declination
-                val inclination = geomagneticField.inclination
-                val fieldStrength = geomagneticField.fieldStrength
+                xField.value = geomagneticField.x
+                xField.value = geomagneticField.y
+                xField.value = geomagneticField.z
 
                 // You could store these values similarly, or use them directly as needed
-                Log.d("Geomagnetic Data", "Declination: $declination, Inclination: $inclination, Field Strength: $fieldStrength")
+                Log.d("Geomagnetic Data", "Declination: $xField, Inclination: $yField, Field Strength: $zField")
 
-                // Optionally, update UI or other components with this data
-            } ?: run {
-                Toast.makeText(this, "Location not available", Toast.LENGTH_LONG).show()
             }
         } else {
             // Prompt user to grant location permission
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 1)
+            Log.d("getLocation result", "Else execution entered.")
         }
     }
 
@@ -256,12 +258,16 @@ fun StarInput(onValueChange: (String) -> Unit) {
 
 // MainScreen composable that wraps the main content of the app
 @Composable
-fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableState<Double?>, altitudeState: MutableState<Double?>, bluetoothService: BluetoothService) {
+fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableState<Double?>,
+               altitudeState: MutableState<Double?>, xField: MutableState<Float?>,
+               yField: MutableState<Float?>, zField: MutableState<Float?>,
+               bluetoothService: BluetoothService) {
 
     val TAG = "MainScreen"
 
     // Define a state to hold the list of received messages
     val receivedMessages = remember { mutableStateListOf<String>() }
+    val listState = rememberLazyListState()
 
     DisposableEffect(Unit) {
         val onDataReceived: (String) -> Unit = { message ->
@@ -405,18 +411,12 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
         Text(text = "Entered Star ID: $starIdInput")
 
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         Text(text = "Received Bluetooth Data:")
         Spacer(modifier = Modifier.height(4.dp))
 
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(receivedMessages) { message ->
-                Text(
-                    text = message,
-                    modifier = Modifier.padding(8.dp)
-                )
-            }
-        }
+
+        MessageList(receivedMessages, listState)
     }
 }
 
@@ -478,4 +478,21 @@ fun getStarData(starId: Int, latitude: Double, longitude: Double): StarData {
     Log.d("StarData", "Altitude: $altitudeValue, Azimuth: $azimuthValue, Visible: $visibleValue")
 
     return StarData(altitudeValue, azimuthValue, visibleValue)
+}
+@Composable
+fun MessageList(messages: List<String>, listState: LazyListState) {
+    LazyColumn(state = listState) {
+        items(messages) { message ->
+            Text(text = message)
+        }
+    }
+    scrollToBottom(listState, messages)
+}
+@Composable
+fun scrollToBottom(listState: LazyListState, receivedMessages: List<String>) {
+    LaunchedEffect(receivedMessages.size) {
+        if (listState.layoutInfo.totalItemsCount > 0) {
+            listState.animateScrollToItem(index = listState.layoutInfo.totalItemsCount - 1)
+        }
+    }
 }
