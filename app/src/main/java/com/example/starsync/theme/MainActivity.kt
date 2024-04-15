@@ -50,6 +50,7 @@ import com.chaquo.python.Python
 import com.example.starsync.theme.ui.StarSyncTheme
 import android.hardware.GeomagneticField
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.*
@@ -59,6 +60,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.pager.*
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.isActive
 
@@ -74,6 +76,7 @@ class MainActivity : ComponentActivity() {
     class SharedViewModel : ViewModel() {
         // List that holds the received messages
         val messages = mutableStateListOf<String>()
+        val microcontrollerAddress: String = "98:D3:02:96:A2:05"
     }
 
 
@@ -108,6 +111,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val viewModel = SharedViewModel()
+        getLocation()
+        if (!::bluetoothService.isInitialized) {
+            initializeBluetoothService(viewModel)
+            initalConnectMade.value = true
+        }
+
         requestMultiplePermissionsLauncher.launch(
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BLUETOOTH_CONNECT)
         )
@@ -121,7 +131,6 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     if (isAppReady.value) {
-                        val viewModel = SharedViewModel()
                         AppPager(userLatitude, userLongitude, userAltitude, xField, yField,
                             zField, dec, bluetoothService, viewModel, initalConnectMade)
                         Log.d(TAG, "MainScreen() called")
@@ -132,25 +141,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        getLocation()
-        if (!::bluetoothService.isInitialized) {
-            initializeBluetoothService()
-            initalConnectMade.value = true
-        }
         Log.d(TAG, "getLocation() and initializeBluetoothService() called")
 
     }
 
     override fun onResume() {
         super.onResume()
+        val viewModel = SharedViewModel()
         if (!::bluetoothService.isInitialized) {
             Log.d(TAG, "Reconnecting to device...")
-            initializeBluetoothService()
+            initializeBluetoothService(viewModel)
         }
     }
 
 
-    private fun initializeBluetoothService() {
+    private fun initializeBluetoothService(sharedViewModel: SharedViewModel) {
         // Initialize the bluetoothService before trying to access any of its methods
         bluetoothService = BluetoothService(this)
 
@@ -160,8 +165,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // Connect to the device, ensure permissions are granted before this step
-        val microcontrollerAddress: String = "98:D3:02:96:A2:05"
-        bluetoothService.connectToDevice(microcontrollerAddress) {
+        bluetoothService.connectToDevice(sharedViewModel.microcontrollerAddress) {
             // What we are doing on successful connection - sending magnetic field data.
             if (!magneticDataSent){
                 Log.d(TAG, "Magnetic field data sending...")
@@ -497,7 +501,8 @@ fun MessageList(messages: List<String>, listState: LazyListState) {
         state = listState,
         modifier = Modifier
             .fillMaxWidth() // Fill the maximum width available
-            .heightIn(max = 300.dp) // Set a maximum height for the LazyColumn
+            .heightIn(300.dp) // Set a maximum height for the LazyColumn
+            .background(Color(0xFF121212))
     ) {
         items(messages) { message ->
             Text(
@@ -510,11 +515,11 @@ fun MessageList(messages: List<String>, listState: LazyListState) {
 
         }
     }
-    scrollToBottom(listState, messages)
+    ScrollToBottom(listState, messages)
 }
 
 @Composable
-fun scrollToBottom(listState: LazyListState, receivedMessages: List<String>) {
+fun ScrollToBottom(listState: LazyListState, receivedMessages: List<String>) {
     LaunchedEffect(receivedMessages.size) {
         if (listState.layoutInfo.totalItemsCount > 0) {
             listState.animateScrollToItem(index = listState.layoutInfo.totalItemsCount - 1)
@@ -559,7 +564,7 @@ fun AppPager(latitudeState: MutableState<Double?>, longitudeState: MutableState<
             if(!bluetoothService.isConnected()){
                 reconnected.value = false
                 Log.d(TAG, "Bluetooth connection lost! Attempting to reconnect from within AppPager...")
-                bluetoothService.connectToDevice("98:D3:02:96:A2:05") {
+                bluetoothService.connectToDevice(viewModel.microcontrollerAddress) {
                 }
             }else{
                 if(!reconnected.value){
@@ -604,7 +609,7 @@ fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivit
     Spacer(modifier = Modifier.height(16.dp))
 
     Text(text = "Received Bluetooth Data:")
-    Spacer(modifier = Modifier.height(4.dp))
+    Spacer(modifier = Modifier.height(300.dp))
 
 
     MessageList(viewModel.messages, listState)
