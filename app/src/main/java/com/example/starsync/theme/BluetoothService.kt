@@ -43,7 +43,7 @@ class BluetoothService(private val context : Context) {
                 onConnected()
             } catch (e: IOException) {
                 // Connection failed
-                Log.e(TAG, "Connection failed: ${e.message}")
+                Log.e(TAG, "Connection failed: ${e.message}\r\n${e.printStackTrace()}")
                 try {
                     bluetoothSocket?.close()
                 } catch (ce: IOException) {
@@ -94,27 +94,31 @@ class BluetoothService(private val context : Context) {
             }
             try {
                 val inputStream = bluetoothSocket?.inputStream ?: return@launch
-                val buffer = ByteArray(1024) // Adjust buffer size as needed
+                val buffer = ByteArray(2048)  // Consider testing different sizes
+
                 while (isActive) {
                     val bytes = inputStream.read(buffer)
                     if (bytes > 0) {
                         val incomingMessage = String(buffer, 0, bytes)
+                        Log.d(TAG, "Received data size: $bytes bytes")  // Log the size of the data received
                         withContext(Dispatchers.Main) {
-                            onDataReceived(incomingMessage) // This now runs on the main thread
+                            onDataReceived(incomingMessage)
                         }
                         Log.d(TAG, "Received: $incomingMessage")
                     }
                 }
             } catch (e: IOException) {
-                Log.e(TAG, "Error receiving data: ${e.message}")
-                // Handle disconnection or other errors here
+                withContext(Dispatchers.Main) {
+                    Log.e(TAG, "Error receiving data: ${e.message}")
+                }
             }
         }
     }
 
+
     fun isConnected(): Boolean {
+        Log.d(TAG, "isConnected() called: ${bluetoothSocket?.isConnected}")
         return bluetoothSocket?.isConnected == true
-        Log.d(TAG, "isConnected() called")
     }
 
     fun disconnect() {

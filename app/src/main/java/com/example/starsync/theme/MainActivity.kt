@@ -51,7 +51,10 @@ import com.example.starsync.theme.ui.StarSyncTheme
 import android.hardware.GeomagneticField
 import androidx.compose.foundation.lazy.*
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 
 class MainActivity : ComponentActivity() {
@@ -59,6 +62,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var bluetoothService: BluetoothService
 
     private var isAppReady = mutableStateOf(false)
+    private var magneticDataSent = false
+
 
     companion object {
         private const val TAG = "MainActivity"
@@ -76,6 +81,7 @@ class MainActivity : ComponentActivity() {
     private var xField = mutableStateOf<Float?>(null)
     private var yField = mutableStateOf<Float?>(null)
     private var zField = mutableStateOf<Float?>(null)
+    private var dec = mutableStateOf<Float?>(null)
 
 
 
@@ -93,8 +99,6 @@ class MainActivity : ComponentActivity() {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BLUETOOTH_CONNECT)
         )
         Log.d(TAG, "requestMultiplePermissionsLauncher called")
-        initializeBluetoothService()
-        getLocation()
 
         // Set the content of the activity to the MainScreen composable
         setContent {
@@ -105,7 +109,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     if (isAppReady.value) {
                         MainScreen(userLatitude, userLongitude, userAltitude, xField, yField,
-                            zField, bluetoothService)
+                            zField, dec, bluetoothService)
                         Log.d(TAG, "MainScreen() called")
                     } else {
                         // Show a loading or placeholder screen
@@ -114,11 +118,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        if (::bluetoothService.isInitialized && isAppReady.value) {
-            if (!bluetoothService.isConnected()) {
-                Log.d(TAG, "Reconnecting to device...")
-                initializeBluetoothService()
-            }
+        getLocation()
+        if (!::bluetoothService.isInitialized) {
+            initializeBluetoothService()
         }
         Log.d(TAG, "getLocation() and initializeBluetoothService() called")
 
@@ -126,11 +128,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::bluetoothService.isInitialized && isAppReady.value) {
-            if (!bluetoothService.isConnected()) {
-                Log.d(TAG, "Reconnecting to device...")
-                initializeBluetoothService()
-            }
+        if (!::bluetoothService.isInitialized) {
+            Log.d(TAG, "Reconnecting to device...")
+            initializeBluetoothService()
         }
     }
 
@@ -146,8 +146,13 @@ class MainActivity : ComponentActivity() {
 
         // Connect to the device, ensure permissions are granted before this step
         val microcontrollerAddress: String = "98:D3:02:96:A2:05"
-        bluetoothService.connectToDevice(microcontrollerAddress) {
-            // This callback could be part of an enhanced connectToDevice function that includes a lambda for what to do on successful connection
+        bluetoothService.connectToDevice(microcontrollerAddress, ) {
+            // What we are doing on successful connection - sending magnetic field data.
+            if (!magneticDataSent){
+                Log.d(TAG, "Magnetic field data sending...")
+                bluetoothService.sendData("M${xField.value},${yField.value},${zField.value},${dec.value}\n")
+                magneticDataSent = true
+            }
             Log.d(TAG, "Connection successful, start listening for data")
         }
         isAppReady.value = true
@@ -170,7 +175,6 @@ class MainActivity : ComponentActivity() {
 
                 Log.d("getLocation", "$userLatitude $userLongitude $userAltitude")
 
-                // Create an instance of GeomagneticField
                 val geomagneticField = GeomagneticField(
                     it.latitude.toFloat(),
                     it.longitude.toFloat(),
@@ -178,14 +182,11 @@ class MainActivity : ComponentActivity() {
                     System.currentTimeMillis()
                 )
 
-                // Now you can get the magnetic field data
                 xField.value = geomagneticField.x
                 yField.value = geomagneticField.y
                 zField.value = geomagneticField.z
+                dec.value = geomagneticField.declination
 
-                // You could store these values similarly, or use them directly as needed
-                Log.d("Geomagnetic Data", "Declination: $xField, Inclination: $yField, Field Strength: $zField")
-                bluetoothService.sendData("M$xField,$yField,$zField")
 
             }
         } else {
@@ -259,7 +260,7 @@ fun StarInput(onValueChange: (String) -> Unit) {
 fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableState<Double?>,
                altitudeState: MutableState<Double?>, xField: MutableState<Float?>,
                yField: MutableState<Float?>, zField: MutableState<Float?>,
-               bluetoothService: BluetoothService) {
+               dec: MutableState<Float?>, bluetoothService: BluetoothService) {
 
     val TAG = "MainScreen"
 
@@ -271,15 +272,24 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
         val onDataReceived: (String) -> Unit = { message ->
             receivedMessages.add(message)
         }
+        val job = CoroutineScope(Dispatchers.IO).launch {
+        delay(1000)  // Delay for 1000 milliseconds (1 second) - if this isn't done
+                              // data is garbled on startup and an error is thrown.
         bluetoothService.receiveData(onDataReceived)
+    }
 
         onDispose {
             // Clean up actions if needed when the composable leaves the composition
+            job.cancel()
         }
     }
     val latitude = latitudeState.value
     val longitude = longitudeState.value
     val altitude = altitudeState.value
+    val xfield = xField.value
+    val yfield = yField.value
+    val zfield = zField.value
+    val declination = dec.value
 
     //Dropdown menu necessary variables
     val availableModes = listOf("Pointing", "Health", "Standby", "Calibration")
@@ -304,6 +314,10 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
         Text(text = "Latitude: ${latitude ?: "Not Available"}")
         Text(text = "Longitude: ${longitude ?: "Not Available"}")
         Text(text = "Altitude: ${altitude ?: "Not Available"}")
+        Text(text = "X Magnetic Field: ${xfield ?: "Not Available"}")
+        Text(text = "Y Magnetic Field: ${yfield ?: "Not Available"}")
+        Text(text = "Z Magnetic Field: ${zfield ?: "Not Available"}")
+        Text(text = "Magnetic Declination: ${declination ?: "Not Available"}")
 
         Spacer(modifier = Modifier.height(16.dp))
 
