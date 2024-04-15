@@ -15,11 +15,14 @@ import java.io.IOException
 import java.util.*
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
-
+import android.bluetooth.BluetoothManager
 
 
 class BluetoothService(private val context : Context) {
-    private val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
+    private val bluetoothAdapter: BluetoothAdapter? by lazy {
+        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothManager.adapter
+    }
     private var bluetoothSocket: BluetoothSocket? = null
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
     private val microcontrollerUUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
@@ -33,12 +36,11 @@ class BluetoothService(private val context : Context) {
                 // Bluetooth not supported on this device
                 return@launch
             }
-            val device: BluetoothDevice? = bluetoothAdapter.getRemoteDevice(deviceAddress)
+            val device: BluetoothDevice? = bluetoothAdapter?.getRemoteDevice(deviceAddress)
             try {
                 bluetoothSocket = device?.createRfcommSocketToServiceRecord(microcontrollerUUID)
                 bluetoothSocket?.connect()
                 // Connection successful
-                // You could launch another coroutine here to listen for incoming data
                 Log.d(TAG, "connectToDevice() try block successful")
                 onConnected()
             } catch (e: IOException) {
@@ -94,7 +96,7 @@ class BluetoothService(private val context : Context) {
             }
             try {
                 val inputStream = bluetoothSocket?.inputStream ?: return@launch
-                val buffer = ByteArray(2048)  // Consider testing different sizes
+                val buffer = ByteArray(1028)  // Consider testing different sizes
 
                 while (isActive) {
                     val bytes = inputStream.read(buffer)
@@ -117,7 +119,6 @@ class BluetoothService(private val context : Context) {
 
 
     fun isConnected(): Boolean {
-        Log.d(TAG, "isConnected() called: ${bluetoothSocket?.isConnected}")
         return bluetoothSocket?.isConnected == true
     }
 

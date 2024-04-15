@@ -49,12 +49,18 @@ import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import com.example.starsync.theme.ui.StarSyncTheme
 import android.hardware.GeomagneticField
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.*
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.pager.*
+import androidx.lifecycle.ViewModel
+import kotlinx.coroutines.isActive
 
 
 class MainActivity : ComponentActivity() {
@@ -63,6 +69,13 @@ class MainActivity : ComponentActivity() {
 
     private var isAppReady = mutableStateOf(false)
     private var magneticDataSent = false
+    private var initalConnectMade = mutableStateOf(false)
+    data class MagneticField(val x: Float, val y: Float, val z: Float)
+    class SharedViewModel : ViewModel() {
+        // List that holds the received messages
+        val messages = mutableStateListOf<String>()
+    }
+
 
 
     companion object {
@@ -108,8 +121,9 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     if (isAppReady.value) {
-                        MainScreen(userLatitude, userLongitude, userAltitude, xField, yField,
-                            zField, dec, bluetoothService)
+                        val viewModel = SharedViewModel()
+                        AppPager(userLatitude, userLongitude, userAltitude, xField, yField,
+                            zField, dec, bluetoothService, viewModel, initalConnectMade)
                         Log.d(TAG, "MainScreen() called")
                     } else {
                         // Show a loading or placeholder screen
@@ -121,6 +135,7 @@ class MainActivity : ComponentActivity() {
         getLocation()
         if (!::bluetoothService.isInitialized) {
             initializeBluetoothService()
+            initalConnectMade.value = true
         }
         Log.d(TAG, "getLocation() and initializeBluetoothService() called")
 
@@ -146,7 +161,7 @@ class MainActivity : ComponentActivity() {
 
         // Connect to the device, ensure permissions are granted before this step
         val microcontrollerAddress: String = "98:D3:02:96:A2:05"
-        bluetoothService.connectToDevice(microcontrollerAddress, ) {
+        bluetoothService.connectToDevice(microcontrollerAddress) {
             // What we are doing on successful connection - sending magnetic field data.
             if (!magneticDataSent){
                 Log.d(TAG, "Magnetic field data sending...")
@@ -260,29 +275,14 @@ fun StarInput(onValueChange: (String) -> Unit) {
 fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableState<Double?>,
                altitudeState: MutableState<Double?>, xField: MutableState<Float?>,
                yField: MutableState<Float?>, zField: MutableState<Float?>,
-               dec: MutableState<Float?>, bluetoothService: BluetoothService) {
+               dec: MutableState<Float?>, bluetoothService: BluetoothService,
+               viewModel: MainActivity.SharedViewModel
+) {
 
     val TAG = "MainScreen"
 
-    // Define a state to hold the list of received messages
-    val receivedMessages = remember { mutableStateListOf<String>() }
     val listState = rememberLazyListState()
 
-    DisposableEffect(Unit) {
-        val onDataReceived: (String) -> Unit = { message ->
-            receivedMessages.add(message)
-        }
-        val job = CoroutineScope(Dispatchers.IO).launch {
-        delay(1000)  // Delay for 1000 milliseconds (1 second) - if this isn't done
-                              // data is garbled on startup and an error is thrown.
-        bluetoothService.receiveData(onDataReceived)
-    }
-
-        onDispose {
-            // Clean up actions if needed when the composable leaves the composition
-            job.cancel()
-        }
-    }
     val latitude = latitudeState.value
     val longitude = longitudeState.value
     val altitude = altitudeState.value
@@ -428,7 +428,7 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
         Spacer(modifier = Modifier.height(4.dp))
 
 
-        MessageList(receivedMessages, listState)
+        MessageList(viewModel.messages, listState)
     }
 }
 
@@ -493,13 +493,26 @@ fun getStarData(starId: Int, latitude: Double, longitude: Double): StarData {
 }
 @Composable
 fun MessageList(messages: List<String>, listState: LazyListState) {
-    LazyColumn(state = listState) {
+    LazyColumn(
+        state = listState,
+        modifier = Modifier
+            .fillMaxWidth() // Fill the maximum width available
+            .heightIn(max = 300.dp) // Set a maximum height for the LazyColumn
+    ) {
         items(messages) { message ->
-            Text(text = message)
+            Text(
+                text = message,
+                modifier = Modifier
+                    .padding(4.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 100.dp) // Limit the height of each message
+            )
+
         }
     }
     scrollToBottom(listState, messages)
 }
+
 @Composable
 fun scrollToBottom(listState: LazyListState, receivedMessages: List<String>) {
     LaunchedEffect(receivedMessages.size) {
@@ -507,4 +520,92 @@ fun scrollToBottom(listState: LazyListState, receivedMessages: List<String>) {
             listState.animateScrollToItem(index = listState.layoutInfo.totalItemsCount - 1)
         }
     }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun AppPager(latitudeState: MutableState<Double?>, longitudeState: MutableState<Double?>,
+             altitudeState: MutableState<Double?>, xField: MutableState<Float?>,
+             yField: MutableState<Float?>, zField: MutableState<Float?>,
+             dec: MutableState<Float?>, bluetoothService: BluetoothService,
+             viewModel: MainActivity.SharedViewModel, initialConnect: MutableState<Boolean>) {
+
+    val TAG = "AppPager"
+
+
+
+    val pagerState = rememberPagerState()
+    val reconnected = remember { mutableStateOf(false) }
+
+    HorizontalPager(pageCount = 2, state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+        when (page) {
+            0 -> MainScreen(
+                latitudeState,
+                longitudeState,
+                altitudeState,
+                xField,
+                yField,
+                zField,
+                dec,
+                bluetoothService, viewModel
+            )
+
+            1 -> CalibrationScreen(bluetoothService, viewModel)  // Assuming you create a separate composable for calibration
+        }
+    }
+    LaunchedEffect(Unit) {
+        while(this.isActive){
+            delay(4000)
+            if(!bluetoothService.isConnected()){
+                reconnected.value = false
+                Log.d(TAG, "Bluetooth connection lost! Attempting to reconnect from within AppPager...")
+                bluetoothService.connectToDevice("98:D3:02:96:A2:05") {
+                }
+            }else{
+                if(!reconnected.value){
+                    reconnected.value = true
+                }
+            }
+        }
+    }
+
+    DisposableEffect(pagerState.currentPage, reconnected.value) {
+        val onDataReceived: (String) -> Unit = { message ->
+            viewModel.messages.add(message)
+        }
+        val job = CoroutineScope(Dispatchers.IO).launch {
+            bluetoothService.receiveData(onDataReceived)
+        }
+
+        onDispose {
+            // Clean up actions if needed when the composable leaves the composition
+            job.cancel()
+            Log.d(TAG, "AppPager coroutine closed.")
+        }
+    }
+}
+
+@Composable
+fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivity.SharedViewModel) {
+
+    val TAG = "CalibrationScreen"
+
+    val magneticFields = remember { mutableStateListOf<MainActivity.MagneticField>() }
+
+    val listState = rememberLazyListState()
+
+    Column(modifier = Modifier
+        .fillMaxSize()
+        .padding(16.dp)) {
+        Text("Calibration Page")
+        // Additional UI elements for calibration
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Text(text = "Received Bluetooth Data:")
+    Spacer(modifier = Modifier.height(4.dp))
+
+
+    MessageList(viewModel.messages, listState)
 }
