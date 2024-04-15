@@ -11,4 +11,6 @@ ability to transmit one of four one letter commands to the telescope's microcont
   4) Standby (S) - This command will prompt the microcontroller to pause all current operations.
 
 This app is written in Kotlin, with a Python file used for accessing the Hipparcos Star Catalogue and performing all necessary calculations related to both the 
-alt-az coordinates as well as the magnetic field vector. The Python libraries SkyField and pyIGRF were used for calculations. 
+alt-az coordinates as well as the magnetic field vector. The Python library SkyField was used for calculations. 
+
+Developed by Steven Perry and Brendan Riley.
