@@ -51,14 +51,14 @@ android {
 
 chaquopy {
     defaultConfig {
-        version = "3.12"
+        version = "3.10"
         pip {
             install 'skyfield'
             install 'sgp4'
             install 'jplephem'
             install 'pandas'
-            install 'numpy'
-            install 'scipy'       // Add this for optimization
+            options 'https://chaquo.com/pypi-13.1/scipy/scipy-1.8.1-1-cp310-cp310-android_21_arm64_v8a.whl'
+            install 'scipy-1.8.1-1-cp310-cp310-android_21_arm64_v8a.whl'
         }
     }
 }
