@@ -58,7 +58,6 @@ chaquopy {
             install 'jplephem'
             install 'pandas'
             install 'numpy'
-            install 'matplotlib'  // Add this for plotting
             install 'scipy'       // Add this for optimization
         }
     }

@@ -117,6 +117,39 @@ class BluetoothService(private val context : Context) {
         }
     }
 
+    private val completeData = StringBuilder()
+    private var onDataComplete: ((String) -> Unit)? = null
+
+    fun receiveMagnetometerData(onMagDataReceived: (String) -> Unit, onDataComplete: (String) -> Unit) {
+        this.onDataComplete = onDataComplete
+        coroutineScope.launch {
+            if (bluetoothSocket == null) {
+                Log.e(TAG, "receiveMagData() failed: BluetoothSocket is null")
+                return@launch
+            }
+            try {
+                val inputStream = bluetoothSocket?.inputStream ?: return@launch
+                val buffer = ByteArray(1800) // Adjust for expected magnetometer data length (300 data-points, each 6 bytes)
+                while (isActive) {
+                    val bytes = inputStream.read(buffer)
+                    if (bytes > 0) {
+                        val dataString = String(buffer, 0, bytes)
+                        if (dataString.contains("END_MESSAGE")){
+                            completeData.append(dataString.substringBefore("END_DELIMITER"))
+                            Log.d(TAG, "Found End Delimiter")
+                            onDataComplete(completeData.toString())
+                            completeData.clear()
+                            return@launch
+                        }
+                        completeData.append(dataString)
+                        onMagDataReceived(dataString)
+                    }
+                }
+            } catch (e: IOException) {
+                Log.e(TAG, "Error in receiving magnetometer data: ${e.message}")
+            }
+        }
+    }
 
     fun isConnected(): Boolean {
         return bluetoothSocket?.isConnected == true

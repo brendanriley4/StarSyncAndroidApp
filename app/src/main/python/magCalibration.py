@@ -1,101 +1,98 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.optimize import least_squares
-from mpl_toolkits.mplot3d import Axes3D
+from scipy import linalg
 
 
-# Function to handle incoming data
-def process_data(data_string):
-    # Split the long string into a list of strings at each position where a new set of XYZ starts
-    data_list = data_string.split(',')
-    grouped_data = [data_list[n:n+3] for n in range(0, len(data_list), 3)]
+class Magnetometer(object):
+    def __init__(self, F=1000):
+        # Initialize magnetic field strength and calibration parameters
+        self.F = F
+        self.b = np.zeros([3, 1])
+        self.A_1 = np.eye(3)
 
-    # Convert these groups to floats and create a numpy array
-    data = np.array([list(map(float, group)) for group in grouped_data])
+    def process_data(self, data_string):
+        # Convert string data to numpy array format
+        data_list = data_string.split(',')
+        grouped_data = [data_list[n:n+3] for n in range(0, len(data_list), 3)]
+        data = np.array([list(map(float, group)) for group in grouped_data])
+        return data.T  # Transpose for subsequent processing
 
-    # Transpose so that each row is one component (x, y, z) across all measurements
-    magM = data.T
-    return magM
+    def calibrate(self, data_string):
+        # Process the string data
+        data = self.process_data(data_string)
+        # Perform ellipsoid fitting
+        M, n, d = self.__ellipsoid_fit(data)
+        # Compute calibration parameters
+        M_1 = linalg.inv(M)
+        self.b = -np.dot(M_1, n)
+        self.A_1 = np.real(self.F / np.sqrt(np.dot(n.T, np.dot(M_1, n)) - d) * linalg.sqrtm(M))
 
+        # format output
+        string_output = matrices_to_csv(self.A_1, self.b)
 
-def transform_mag_data(mag_data, x0, y0, z0, a, b, c, alpha, beta, gamma):
+        return string_output
 
-    # Translate data to move the ellipsoid center to the origin
-    translated_data = mag_data - np.array([[x0], [y0], [z0]])
+    def __ellipsoid_fit(self, s):
 
-    # Create rotation matrices for each axis
-    Rx = np.array([[1, 0, 0],
-                   [0, np.cos(alpha), -np.sin(alpha)],
-                   [0, np.sin(alpha), np.cos(alpha)]])
-    Ry = np.array([[np.cos(beta), 0, np.sin(beta)],
-                   [0, 1, 0],
-                   [-np.sin(beta), 0, np.cos(beta)]])
-    Rz = np.array([[np.cos(gamma), -np.sin(gamma), 0],
-                   [np.sin(gamma), np.cos(gamma), 0],
-                   [0, 0, 1]])
+        # D (samples)
+        D = np.array([s[0] ** 2., s[1] ** 2., s[2] ** 2.,
+                      2. * s[1] * s[2], 2. * s[0] * s[2], 2. * s[0] * s[1],
+                      2. * s[0], 2. * s[1], 2. * s[2], np.ones_like(s[0])])
 
-    # Complete rotation matrix
-    R = Rx @ Ry @ Rz
+        # S, S_11, S_12, S_21, S_22 (eq. 11)
+        S = np.dot(D, D.T)
+        S_11 = S[:6, :6]
+        S_12 = S[:6, 6:]
+        S_21 = S[6:, :6]
+        S_22 = S[6:, 6:]
 
-    # Scale the data according to the ellipsoid axes
-    S = np.diag([1/a, 1/b, 1/c])
+        # C (Eq. 8, k=4)
+        C = np.array([[-1, 1, 1, 0, 0, 0],
+                      [1, -1, 1, 0, 0, 0],
+                      [1, 1, -1, 0, 0, 0],
+                      [0, 0, 0, -4, 0, 0],
+                      [0, 0, 0, 0, -4, 0],
+                      [0, 0, 0, 0, 0, -4]])
 
-    # Apply the rotations and scaling
-    transformed_data = R @ S @ translated_data
+        # v_1 (eq. 15, solution)
+        E = np.dot(linalg.inv(C),
+                   S_11 - np.dot(S_12, np.dot(linalg.inv(S_22), S_21)))
 
-    return transformed_data
+        E_w, E_v = np.linalg.eig(E)
 
+        v_1 = E_v[:, np.argmax(E_w)]
+        if v_1[0] < 0: v_1 = -v_1
 
-def ellipsoid_fit(mag_data):
-    # Initial guess for the ellipsoid parameters
-    # x0, y0, z0 (ellipsoid center), a, b, c (semi-axes lengths), angles defining orientation
-    x0, y0, z0 = np.mean(mag_data, axis=1)
-    initial_guess = [x0, y0, z0, 1, 1, 1, 0, 0, 0]  # Simplified guess
+        # v_2 (eq. 13, solution)
+        v_2 = np.dot(np.dot(-np.linalg.inv(S_22), S_21), v_1)
 
-    def residuals(params):
-        x0, y0, z0, a, b, c, alpha, beta, gamma = params
-        # Transform data based on current parameters
-        transformed = transform_mag_data(mag_data, x0, y0, z0, a, b, c, alpha, beta, gamma)
-        # Calculate how far off from being a sphere
-        sphere_center = np.mean(transformed, axis=1)
-        distances = np.sqrt(np.sum((transformed - sphere_center[:, None])**2, axis=0))
-        radius = np.mean(distances)
-        return distances - radius
+        # quadratic-form parameters, parameters h and f swapped as per correction by Roger R on Teslabs page
+        M = np.array([[v_1[0], v_1[5], v_1[4]],
+                      [v_1[5], v_1[1], v_1[3]],
+                      [v_1[4], v_1[3], v_1[2]]])
+        n = np.array([[v_2[0]],
+                      [v_2[1]],
+                      [v_2[2]]])
+        d = v_2[3]
 
-    result = least_squares(residuals, initial_guess, method='lm')
-    return result.x
-
-
-def compute_correction_matrix(params):
-    x0, y0, z0, a, b, c, alpha, beta, gamma = params
-    # Translation vector for hard iron correction
-    translation = np.array([x0, y0, z0])
-
-    # Create rotation matrices for each axis
-    Rx = np.array([[1, 0, 0],
-                   [0, np.cos(alpha), -np.sin(alpha)],
-                   [0, np.sin(alpha), np.cos(alpha)]])
-    Ry = np.array([[np.cos(beta), 0, np.sin(beta)],
-                   [0, 1, 0],
-                   [-np.sin(beta), 0, np.cos(beta)]])
-    Rz = np.array([[np.cos(gamma), -np.sin(gamma), 0],
-                   [np.sin(gamma), np.cos(gamma), 0],
-                   [0, 0, 1]])
-    # Complete rotation matrix
-    R = Rx @ Ry @ Rz
-
-    # Scaling matrix for soft iron correction
-    S = np.diag([1 / a, 1 / b, 1 / c])
-
-    # The full correction matrix
-    correction_matrix = R @ S
-    return translation, correction_matrix
+        return M, n, d
 
 
-def apply_calibration(mag_data, translation, correction_matrix):
-    # Correct hard iron distortions
-    corrected_data = mag_data - translation[:, np.newaxis]
-    # Correct soft iron distortions
-    corrected_data = correction_matrix @ corrected_data
-    return corrected_data
+def matrices_to_csv(A, b):
+    # Convert matrices to numpy arrays if they are not already
+    A = np.array(A)
+    b = np.array(b)
 
+    # Flatten the arrays
+    flat_A = A.flatten()
+    flat_b = b.flatten()
+
+    # Concatenate into one array
+    full_array = np.concatenate((flat_A, flat_b))
+
+    # Convert to 16-bit floating point
+    full_array_16bit = full_array.astype(np.float16)
+
+    # Convert to comma-separated string
+    csv_string = ",".join(map(str, full_array_16bit))
+
+    return csv_string

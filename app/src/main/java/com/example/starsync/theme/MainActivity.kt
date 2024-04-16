@@ -61,6 +61,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.pager.*
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.isActive
 
@@ -77,9 +82,15 @@ class MainActivity : ComponentActivity() {
         // List that holds the received messages
         val messages = mutableStateListOf<String>()
         val microcontrollerAddress: String = "98:D3:02:96:A2:05"
+
+        //Some new stuff for receiving Magnetometer Data
+        private val _calibratedData = MutableLiveData<String>()
+        val calibratedData: LiveData<String> = _calibratedData
+
+        fun updateCalibratedData(data: String) {
+            _calibratedData.postValue(data)
+        }
     }
-
-
 
     companion object {
         private const val TAG = "MainActivity"
@@ -283,6 +294,8 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
                viewModel: MainActivity.SharedViewModel
 ) {
 
+    val lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current
+
     val TAG = "MainScreen"
 
     val listState = rememberLazyListState()
@@ -372,7 +385,8 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
                 "Pointing" -> "P"
                 "Health" -> "H\n"
                 "Standby" -> "S\n"
-                "Calibration" -> "C\n"
+                "Magnetometer Calibration" -> "CM\n"
+                "Accelerometer Calibration" -> "CA\n"
                 else -> ""
             }
             if (modeCommand.isNotEmpty()) {
@@ -398,9 +412,26 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
                     bluetoothService.sendData(modeCommand)
                     Log.d(TAG, "called sendData() - S")
                 }
-                if (modeCommand == "C\n"){
+                if (modeCommand == "CA\n"){
                     bluetoothService.sendData(modeCommand)
-                    Log.d(TAG, "called sendData() - C")
+                    Log.d(TAG, "called sendData() - CA")
+                }
+                if (modeCommand == "CM\n"){
+                    bluetoothService.sendData(modeCommand)
+                    Log.d(TAG, "called sendData() - CM")
+
+                    //Somehow receive Bluetooth Data and recognize that it is in the form of magnetic coordinates here
+                    bluetoothService.receiveMagnetometerData({ dataPart ->
+                        Log.d("MainActivity", "Receiving data: $dataPart")
+                    }, { completeData ->
+                        Log.d("MainActivity", "Complete data received: $completeData")
+                        viewModel.updateCalibratedData(calibrateMag(completeData))
+                    })
+                    viewModel.calibratedData.observe(lifecycleOwner, Observer { data ->
+                        // Use the calibrated data in your UI or elsewhere
+                        bluetoothService.sendData("CF,")
+                        bluetoothService.sendData(data)
+                    })
                 }
             }
         }) {
@@ -495,6 +526,22 @@ fun getStarData(starId: Int, latitude: Double, longitude: Double): StarData {
 
     return StarData(altitudeValue, azimuthValue, visibleValue)
 }
+
+fun calibrateMag(stringData : String): String {
+    val python = Python.getInstance()
+    val pythonScript =
+        python.getModule("magCalibration")["Magnetometer"]?.call() // Create an instance of the Magnetometer class
+
+    try{
+        val result = pythonScript?.callAttr("calibrate", stringData).toString()
+        Log.d("calibrateMag()", "Success! Iron Offsets:  $result")
+        return(result)
+    } catch (e: Exception) {
+        Log.e("calibrateMag()", "Error: $e")
+        return("Failed")
+    }
+}
+
 @Composable
 fun MessageList(messages: List<String>, listState: LazyListState) {
     LazyColumn(
