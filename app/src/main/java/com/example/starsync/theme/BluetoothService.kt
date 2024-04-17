@@ -16,9 +16,13 @@ import java.util.*
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import android.bluetooth.BluetoothManager
+import kotlinx.coroutines.withTimeoutOrNull
 
 
 class BluetoothService(private val context : Context) {
+    private var isCalibrationMode = false
+    private val calibrationDataBuffer = StringBuilder()
+
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
         val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         bluetoothManager.adapter
@@ -88,7 +92,7 @@ class BluetoothService(private val context : Context) {
         }
     }
 
-    fun receiveData(onDataReceived: (String) -> Unit) {
+    fun receiveData(onDataReceived: (String) -> Unit, onCalibrationDataReceived: (String) -> Unit) {
         coroutineScope.launch {
             if (bluetoothSocket == null) {
                 Log.e(TAG, "receiveData() failed: BluetoothSocket is null")
@@ -103,7 +107,30 @@ class BluetoothService(private val context : Context) {
                     if (bytes > 0) {
                         val incomingMessage = String(buffer, 0, bytes)
                         Log.d(TAG, "Received data size: $bytes bytes")  // Log the size of the data received
-                        withContext(Dispatchers.Main) {
+                        if (incomingMessage.contains("CM")) {
+                            isCalibrationMode = true
+                            calibrationDataBuffer.clear()
+
+                            // Start a timeout coroutine that will end the calibration mode if no "END_MESSAGE" is received within 45 seconds
+                            withTimeoutOrNull(45000L) {  // 45000 milliseconds = 45 seconds
+                                while (isCalibrationMode && isActive) {
+                                    val newBytes = inputStream.read(buffer)
+                                    val newMessage = String(buffer, 0, newBytes)
+                                    if (newMessage.contains("END_MESSAGE")) { // can change this to any message delimiter we want to
+                                        onCalibrationDataReceived(calibrationDataBuffer.toString())
+                                        isCalibrationMode = false
+                                    } else {
+                                        calibrationDataBuffer.append(newMessage)
+                                    }
+                                }
+                            }
+                            if (isCalibrationMode) {
+                                // Timeout occurred without receiving "END_MESSAGE"
+                                isCalibrationMode = false
+                                Log.d(TAG, "Calibration timeout: No END_MESSAGE received")
+                                // You can also decide to call onCalibrationDataReceived with what has been collected so far, or handle the timeout case differently
+                            }
+                        } else if (!isCalibrationMode) {
                             onDataReceived(incomingMessage)
                         }
                         Log.d(TAG, "Received: $incomingMessage")
@@ -113,40 +140,6 @@ class BluetoothService(private val context : Context) {
                 withContext(Dispatchers.Main) {
                     Log.e(TAG, "Error receiving data: ${e.message}")
                 }
-            }
-        }
-    }
-
-    private val completeData = StringBuilder()
-    private var onDataComplete: ((String) -> Unit)? = null
-
-    fun receiveMagnetometerData(onMagDataReceived: (String) -> Unit, onDataComplete: (String) -> Unit) {
-        this.onDataComplete = onDataComplete
-        coroutineScope.launch {
-            if (bluetoothSocket == null) {
-                Log.e(TAG, "receiveMagData() failed: BluetoothSocket is null")
-                return@launch
-            }
-            try {
-                val inputStream = bluetoothSocket?.inputStream ?: return@launch
-                val buffer = ByteArray(1800) // Adjust for expected magnetometer data length (300 data-points, each 6 bytes)
-                while (isActive) {
-                    val bytes = inputStream.read(buffer)
-                    if (bytes > 0) {
-                        val dataString = String(buffer, 0, bytes)
-                        if (dataString.contains("END_MESSAGE")){
-                            completeData.append(dataString.substringBefore("END_DELIMITER"))
-                            Log.d(TAG, "Found End Delimiter")
-                            onDataComplete(completeData.toString())
-                            completeData.clear()
-                            return@launch
-                        }
-                        completeData.append(dataString)
-                        onMagDataReceived(dataString)
-                    }
-                }
-            } catch (e: IOException) {
-                Log.e(TAG, "Error in receiving magnetometer data: ${e.message}")
             }
         }
     }

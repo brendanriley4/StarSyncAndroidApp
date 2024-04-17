@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
         val microcontrollerAddress: String = "98:D3:02:96:A2:05"
 
         //Some new stuff for receiving Magnetometer Data
-        private val _calibratedData = MutableLiveData<String>()
+        val _calibratedData = MutableLiveData<String>()
         val calibratedData: LiveData<String> = _calibratedData
 
         fun updateCalibratedData(data: String) {
@@ -294,8 +294,6 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
                viewModel: MainActivity.SharedViewModel
 ) {
 
-    val lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current
-
     val TAG = "MainScreen"
 
     val listState = rememberLazyListState()
@@ -419,19 +417,7 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
                 if (modeCommand == "CM\n"){
                     bluetoothService.sendData(modeCommand)
                     Log.d(TAG, "called sendData() - CM")
-
-                    //Somehow receive Bluetooth Data and recognize that it is in the form of magnetic coordinates here
-                    bluetoothService.receiveMagnetometerData({ dataPart ->
-                        Log.d("MainActivity", "Receiving data: $dataPart")
-                    }, { completeData ->
-                        Log.d("MainActivity", "Complete data received: $completeData")
-                        viewModel.updateCalibratedData(calibrateMag(completeData))
-                    })
-                    viewModel.calibratedData.observe(lifecycleOwner, Observer { data ->
-                        // Use the calibrated data in your UI or elsewhere
-                        bluetoothService.sendData("CF,")
-                        bluetoothService.sendData(data)
-                    })
+                    //Add logic to send dta that is actually calibrated
                 }
             }
         }) {
@@ -528,6 +514,13 @@ fun getStarData(starId: Int, latitude: Double, longitude: Double): StarData {
 }
 
 fun calibrateMag(stringData : String): String {
+
+    // Check if the input string has at least 10 commas
+    if (stringData.count { it == ',' } < 10) {
+        Log.d("calibrateMag()", "Failed: Not enough data points")
+        return "Failed"
+    }
+
     val python = Python.getInstance()
     val pythonScript =
         python.getModule("magCalibration")["Magnetometer"]?.call() // Create an instance of the Magnetometer class
@@ -584,8 +577,6 @@ fun AppPager(latitudeState: MutableState<Double?>, longitudeState: MutableState<
 
     val TAG = "AppPager"
 
-
-
     val pagerState = rememberPagerState()
     val reconnected = remember { mutableStateOf(false) }
 
@@ -625,8 +616,12 @@ fun AppPager(latitudeState: MutableState<Double?>, longitudeState: MutableState<
         val onDataReceived: (String) -> Unit = { message ->
             viewModel.messages.add(message)
         }
+        val onCalibrationDataReceived: (String) -> Unit = { calibrationData ->
+            // Process calibration data
+            viewModel.updateCalibratedData(calibrationData)
+        }
         val job = CoroutineScope(Dispatchers.IO).launch {
-            bluetoothService.receiveData(onDataReceived)
+            bluetoothService.receiveData(onDataReceived, onCalibrationDataReceived)
         }
 
         onDispose {
@@ -640,6 +635,8 @@ fun AppPager(latitudeState: MutableState<Double?>, longitudeState: MutableState<
 @Composable
 fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivity.SharedViewModel) {
 
+    var calibratedData by remember { mutableStateOf<String?>(null) }
+
     val TAG = "CalibrationScreen"
 
     val magneticFields = remember { mutableStateListOf<MainActivity.MagneticField>() }
@@ -650,7 +647,25 @@ fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivit
         .fillMaxSize()
         .padding(16.dp)) {
         Text("Calibration Page")
+
         // Additional UI elements for calibration
+        val lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current
+
+        viewModel.calibratedData.observe(lifecycleOwner, Observer { stringValue ->
+            calibratedData = calibrateMag(stringValue)
+            Log.d(TAG, "calibrateMag() called")
+        })
+
+        Button(onClick = {
+            calibratedData?.let {
+                bluetoothService.sendData(it)
+                Log.d(TAG, "sendData() called")
+            }
+        }) {
+            Text("Send Calibrated Data")
+        }
+
+
     }
 
     Spacer(modifier = Modifier.height(16.dp))
