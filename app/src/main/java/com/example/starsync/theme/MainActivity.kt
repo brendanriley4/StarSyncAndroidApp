@@ -60,6 +60,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.pager.*
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.LifecycleOwner
@@ -84,7 +85,7 @@ class MainActivity : ComponentActivity() {
         val microcontrollerAddress: String = "98:D3:02:96:A2:05"
 
         //Some new stuff for receiving Magnetometer Data
-        val _calibratedData = MutableLiveData<String>()
+        private val _calibratedData = MutableLiveData<String>()
         val calibratedData: LiveData<String> = _calibratedData
 
         fun updateCalibratedData(data: String) {
@@ -307,7 +308,7 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
     val declination = dec.value
 
     //Dropdown menu necessary variables
-    val availableModes = listOf("Pointing", "Health", "Standby", "Calibration")
+    val availableModes = listOf("Pointing", "Health", "Standby", "Magnetometer Calibration", "Accelerometer Calibration")
     val selectedMode = remember { mutableStateOf(availableModes[0]) }
 
     val context = LocalContext.current
@@ -552,7 +553,6 @@ fun MessageList(messages: List<String>, listState: LazyListState) {
                     .fillMaxWidth()
                     .heightIn(max = 100.dp) // Limit the height of each message
             )
-
         }
     }
     ScrollToBottom(listState, messages)
@@ -637,6 +637,8 @@ fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivit
 
     var calibratedData by remember { mutableStateOf<String?>(null) }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+
     val TAG = "CalibrationScreen"
 
     val magneticFields = remember { mutableStateListOf<MainActivity.MagneticField>() }
@@ -656,7 +658,16 @@ fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivit
             Log.d(TAG, "calibrateMag() called")
         })
 
+        LaunchedEffect(calibratedData) {
+            calibratedData?.let {
+                snackbarHostState.showSnackbar("Calibration updated: $it")
+            }
+        }
+
         Button(onClick = {
+            if (calibratedData == null) {
+                Log.d(TAG, "calibratedData is null in Send Calibrated Data Button")
+            }
             calibratedData?.let {
                 bluetoothService.sendData(it)
                 Log.d(TAG, "sendData() called")
@@ -664,15 +675,12 @@ fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivit
         }) {
             Text("Send Calibrated Data")
         }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(text = "Received Bluetooth Data:")
+        Spacer(modifier = Modifier.height(16.dp))
 
 
+        MessageList(viewModel.messages, listState)
     }
-
-    Spacer(modifier = Modifier.height(16.dp))
-
-    Text(text = "Received Bluetooth Data:")
-    Spacer(modifier = Modifier.height(300.dp))
-
-
-    MessageList(viewModel.messages, listState)
 }

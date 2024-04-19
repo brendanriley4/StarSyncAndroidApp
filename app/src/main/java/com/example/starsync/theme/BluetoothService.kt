@@ -107,16 +107,17 @@ class BluetoothService(private val context : Context) {
                     if (bytes > 0) {
                         val incomingMessage = String(buffer, 0, bytes)
                         Log.d(TAG, "Received data size: $bytes bytes")  // Log the size of the data received
-                        if (incomingMessage.contains("CM")) {
+                        if (incomingMessage.contains("CM_BEGIN")) {
+                            Log.d(TAG, "receiveData() found magnetic calibration data.")
                             isCalibrationMode = true
                             calibrationDataBuffer.clear()
 
                             // Start a timeout coroutine that will end the calibration mode if no "END_MESSAGE" is received within 45 seconds
-                            withTimeoutOrNull(45000L) {  // 45000 milliseconds = 45 seconds
+                            withTimeoutOrNull(15000L) {  // 45000 milliseconds = 45 seconds
                                 while (isCalibrationMode && isActive) {
                                     val newBytes = inputStream.read(buffer)
                                     val newMessage = String(buffer, 0, newBytes)
-                                    if (newMessage.contains("END_MESSAGE")) { // can change this to any message delimiter we want to
+                                    if (newMessage.contains("CM_END")) { // can change this to any message delimiter we want to
                                         onCalibrationDataReceived(calibrationDataBuffer.toString())
                                         isCalibrationMode = false
                                     } else {
@@ -127,7 +128,7 @@ class BluetoothService(private val context : Context) {
                             if (isCalibrationMode) {
                                 // Timeout occurred without receiving "END_MESSAGE"
                                 isCalibrationMode = false
-                                Log.d(TAG, "Calibration timeout: No END_MESSAGE received")
+                                Log.d(TAG, "Calibration timeout: No ENDCM received")
                                 // You can also decide to call onCalibrationDataReceived with what has been collected so far, or handle the timeout case differently
                             }
                         } else if (!isCalibrationMode) {
