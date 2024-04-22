@@ -130,6 +130,7 @@ class MainActivity : ComponentActivity() {
             initalConnectMade.value = true
         }
 
+        Log.d(TAG, "getLocation() and initializeBluetoothService() called")
         requestMultiplePermissionsLauncher.launch(
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BLUETOOTH_CONNECT)
         )
@@ -153,8 +154,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        Log.d(TAG, "getLocation() and initializeBluetoothService() called")
-
     }
 
     override fun onResume() {
@@ -203,7 +202,6 @@ class MainActivity : ComponentActivity() {
                 userLongitude.value = it.longitude
                 userAltitude.value = it.altitude
 
-
                 Log.d("getLocation", "$userLatitude $userLongitude $userAltitude")
 
                 val geomagneticField = GeomagneticField(
@@ -212,13 +210,10 @@ class MainActivity : ComponentActivity() {
                     it.altitude.toFloat(),
                     System.currentTimeMillis()
                 )
-
                 xField.value = geomagneticField.x
                 yField.value = geomagneticField.y
                 zField.value = geomagneticField.z
                 dec.value = geomagneticField.declination
-
-
             }
         } else {
             // Prompt user to grant location permission
@@ -496,14 +491,17 @@ fun ModeSelectionDropdown(selectedMode: MutableState<String>, availableModes: Li
 }
 
 fun getStarData(starId: Int, latitude: Double, longitude: Double): StarData {
+    // Create Python Instance
     val python = Python.getInstance()
+    // Load Associated Script
     val pythonScript = python.getModule("fetchStarData")
+    // Create PyObject
     val starDataPyObject: PyObject = pythonScript.callAttr("getStarData", starId, latitude, longitude)
 
-    // Convert the PyObject to a Kotlin List<Any?>
+    // Convert the PyObject to a Kotlin List
     val starDataList = starDataPyObject.asList()
 
-    // Extracting values for toast message
+    // Extracting values
     val altitudeValue = starDataList[0]?.toDouble() ?: 0.0
     val azimuthValue = starDataList[1]?.toDouble() ?: 0.0
     val visibleValue = starDataList[2]?.toBoolean() ?: false
@@ -522,11 +520,11 @@ fun calibrateMag(stringData : String): String {
         return "Failed"
     }
 
+    // Create Python Instance
     val python = Python.getInstance()
-    val pythonScript =
-        python.getModule("magCalibration")["Magnetometer"]?.call() // Create an instance of the Magnetometer class
-
+    val pythonScript = python.getModule("magCalibration")["Magnetometer"]?.call() // Create an instance of the Magnetometer class
     try{
+        // Call magCalibration.calibrate() with stringData as parameter
         val result = pythonScript?.callAttr("calibrate", stringData).toString()
         Log.d("calibrateMag()", "Success! Iron Offsets:  $result")
         return(result)
