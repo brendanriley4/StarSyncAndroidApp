@@ -42,7 +42,6 @@ class BluetoothService(private val context : Context) {
             }
             val device: BluetoothDevice? = bluetoothAdapter?.getRemoteDevice(deviceAddress)
             try {
-                // Initialize socket and connect
                 bluetoothSocket = device?.createRfcommSocketToServiceRecord(microcontrollerUUID)
                 bluetoothSocket?.connect()
                 // Connection successful
@@ -113,7 +112,7 @@ class BluetoothService(private val context : Context) {
                             isCalibrationMode = true
                             calibrationDataBuffer.clear()
 
-                            // Start a timeout coroutine that will end the calibration mode if no "CM_END" is received within 30 seconds
+                            // Start a timeout coroutine that will end the calibration mode if no "END_MESSAGE" is received within 45 seconds
                             withTimeoutOrNull(30000L) {  // 30000 milliseconds = 30 seconds
                                 while (isCalibrationMode && isActive) {
                                     val newBytes = inputStream.read(buffer)
@@ -127,9 +126,9 @@ class BluetoothService(private val context : Context) {
                                 }
                             }
                             if (isCalibrationMode) {
-                                // Timeout occurred without receiving "END_MESSAGE"
+                                // Timeout occurred without receiving "CM_END"
                                 isCalibrationMode = false
-                                Log.d(TAG, "Calibration timeout: No ENDCM received")
+                                Log.d(TAG, "Calibration timeout: No CM_END received")
                                 // You can also decide to call onCalibrationDataReceived with what has been collected so far, or handle the timeout case differently
                             }
                         } else if (!isCalibrationMode) {
