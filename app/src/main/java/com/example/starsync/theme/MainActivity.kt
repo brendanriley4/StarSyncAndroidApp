@@ -123,18 +123,23 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        requestMultiplePermissionsLauncher.launch(
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BLUETOOTH_CONNECT)
+        )
+        Log.d(TAG, "requestMultiplePermissionsLauncher called")
+
         val viewModel = SharedViewModel()
         getLocation()
         if (!::bluetoothService.isInitialized) {
             initializeBluetoothService(viewModel)
             initalConnectMade.value = true
         }
-
         Log.d(TAG, "getLocation() and initializeBluetoothService() called")
-        requestMultiplePermissionsLauncher.launch(
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BLUETOOTH_CONNECT)
-        )
-        Log.d(TAG, "requestMultiplePermissionsLauncher called")
+
+        //requestMultiplePermissionsLauncher.launch(
+          //  arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BLUETOOTH_CONNECT)
+        //)
+        //Log.d(TAG, "requestMultiplePermissionsLauncher called")
 
         // Set the content of the activity to the MainScreen composable
         setContent {
@@ -520,17 +525,19 @@ fun calibrateMag(stringData : String): String {
         return "Failed"
     }
 
+    Log.d("calibrateMag", stringData)
+
     // Create Python Instance
     val python = Python.getInstance()
     val pythonScript = python.getModule("magCalibration")["Magnetometer"]?.call() // Create an instance of the Magnetometer class
-    try{
+    return try{
         // Call magCalibration.calibrate() with stringData as parameter
         val result = pythonScript?.callAttr("calibrate", stringData).toString()
         Log.d("calibrateMag()", "Success! Iron Offsets:  $result")
-        return(result)
+        (result)
     } catch (e: Exception) {
         Log.e("calibrateMag()", "Error: $e")
-        return("Failed")
+        ("Failed")
     }
 }
 
@@ -639,6 +646,8 @@ fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivit
 
     val TAG = "CalibrationScreen"
 
+    var stringCalDat = "temp"
+
     val magneticFields = remember { mutableStateListOf<MainActivity.MagneticField>() }
 
     val listState = rememberLazyListState()
@@ -654,6 +663,7 @@ fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivit
         viewModel.calibratedData.observe(lifecycleOwner, Observer { stringValue ->
             calibratedData = calibrateMag(stringValue)
             Log.d(TAG, "calibrateMag() called")
+            stringCalDat = stringValue
         })
 
         LaunchedEffect(calibratedData) {
@@ -675,10 +685,10 @@ fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivit
         }
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Wont work with calibration data anyways.
         Text(text = "Received Bluetooth Data:")
         Spacer(modifier = Modifier.height(16.dp))
-
-
-        MessageList(viewModel.messages, listState)
+        //MessageList(viewModel.messages, listState)
+        Text(text = stringCalDat)
     }
 }

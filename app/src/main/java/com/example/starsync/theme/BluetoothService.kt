@@ -117,7 +117,7 @@ class BluetoothService(private val context : Context) {
                                 while (isCalibrationMode && isActive) {
                                     val newBytes = inputStream.read(buffer)
                                     val newMessage = String(buffer, 0, newBytes)
-                                    if (newMessage.contains("CM_END")) { // can change this to any message delimiter we want to
+                                    if (newMessage.contains("??Magnetometer calibration complete...")) { // can change this to any message delimiter we want to
                                         onCalibrationDataReceived(calibrationDataBuffer.toString())
                                         isCalibrationMode = false
                                     } else {
@@ -126,7 +126,8 @@ class BluetoothService(private val context : Context) {
                                 }
                             }
                             if (isCalibrationMode) {
-                                // Timeout occurred without receiving "CM_END"
+                                // Timeout occurred without receiving "??Magnetometer calibration complete..."
+                                onCalibrationDataReceived(calibrationDataBuffer.toString())
                                 isCalibrationMode = false
                                 Log.d(TAG, "Calibration timeout: No CM_END received")
                                 // You can also decide to call onCalibrationDataReceived with what has been collected so far, or handle the timeout case differently

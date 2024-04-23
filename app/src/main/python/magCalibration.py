@@ -10,6 +10,8 @@ class Magnetometer(object):
         self.A_1 = np.eye(3)
 
     def process_data(self, data_string):
+        # Remove any problematic line endings and extra spaces
+        data_string = data_string.replace('\r', '').replace('\n', '')
         # Convert string data to numpy array format
         data_list = data_string.split(',')
         grouped_data = [data_list[n:n+3] for n in range(0, len(data_list), 3)]
