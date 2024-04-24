@@ -677,6 +677,7 @@ fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivit
                 Log.d(TAG, "calibratedData is null in Send Calibrated Data Button")
             }
             calibratedData?.let {
+                bluetoothService.sendData("CM")
                 bluetoothService.sendData(it)
                 Log.d(TAG, "sendData() called")
             }
