@@ -10,13 +10,29 @@ class Magnetometer(object):
         self.A_1 = np.eye(3)
 
     def process_data(self, data_string):
-        # Remove any problematic line endings and extra spaces
-        data_string = data_string.replace('\r', '').replace('\n', '')
-        # Convert string data to numpy array format
+        # Remove any problematic line endings, extra spaces, and ensure no other non-numeric chars
+        data_string = data_string.replace('\r', '').replace('\n', '').strip()
+
+        # Convert string data to numpy array format, ensuring each part can be a float
         data_list = data_string.split(',')
         grouped_data = [data_list[n:n+3] for n in range(0, len(data_list), 3)]
-        data = np.array([list(map(float, group)) for group in grouped_data])
+
+        # Create a numpy array, ensuring all conversions are valid floats
+        try:
+            data = np.array([[self.safe_float_conversion(item) for item in group] for group in grouped_data])
+        except ValueError as e:
+            print(f"Error converting string to float: {e}")
+            return None  # Or handle the error as appropriate
+
         return data.T  # Transpose for subsequent processing
+
+    def safe_float_conversion(self, value):
+        """ Attempts to convert a value to float, raising ValueError if the conversion is not possible. """
+        try:
+            return float(value)
+        except ValueError as e:
+            # Optionally log the error or handle it in a specific way
+            raise ValueError(f"Could not convert value {value} to float: {str(e)}")
 
     def calibrate(self, data_string):
         # Process the string data
