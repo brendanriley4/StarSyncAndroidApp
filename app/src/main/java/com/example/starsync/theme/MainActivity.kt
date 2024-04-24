@@ -63,6 +63,8 @@ import androidx.compose.foundation.pager.*
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -582,60 +584,46 @@ fun AppPager(latitudeState: MutableState<Double?>, longitudeState: MutableState<
 
     val TAG = "AppPager"
 
+    val lifecycleOwner = LocalLifecycleOwner.current
     val pagerState = rememberPagerState()
     val reconnected = remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    if (!bluetoothService.isConnected()) {
+                        Log.d(TAG, "App resumed and Bluetooth is not connected. Attempting to reconnect...")
+                        bluetoothService.connectToDevice(viewModel.microcontrollerAddress) {}
+                    }
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(bluetoothService.isConnected()) {
+        if (!bluetoothService.isConnected()) {
+            Log.d(TAG, "Attempting to reconnect from within AppPager...")
+            bluetoothService.connectToDevice(viewModel.microcontrollerAddress) {}
+        }
+    }
 
     HorizontalPager(pageCount = 2, state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
         when (page) {
             0 -> MainScreen(
-                latitudeState,
-                longitudeState,
-                altitudeState,
-                xField,
-                yField,
-                zField,
-                dec,
+                latitudeState, longitudeState, altitudeState, xField, yField, zField, dec,
                 bluetoothService, viewModel
             )
-
-            1 -> CalibrationScreen(bluetoothService, viewModel)  // Assuming you create a separate composable for calibration
-        }
-    }
-    LaunchedEffect(Unit) {
-        while(this.isActive){
-            delay(4000)
-            if(!bluetoothService.isConnected()){
-                reconnected.value = false
-                Log.d(TAG, "Bluetooth connection lost! Attempting to reconnect from within AppPager...")
-                bluetoothService.connectToDevice(viewModel.microcontrollerAddress) {
-                }
-            }else{
-                if(!reconnected.value){
-                    reconnected.value = true
-                }
-            }
-        }
-    }
-
-    DisposableEffect(pagerState.currentPage, reconnected.value) {
-        val onDataReceived: (String) -> Unit = { message ->
-            viewModel.messages.add(message)
-        }
-        val onCalibrationDataReceived: (String) -> Unit = { calibrationData ->
-            // Process calibration data
-            viewModel.updateCalibratedData(calibrationData)
-        }
-        val job = CoroutineScope(Dispatchers.IO).launch {
-            bluetoothService.receiveData(onDataReceived, onCalibrationDataReceived)
-        }
-
-        onDispose {
-            // Clean up actions if needed when the composable leaves the composition
-            job.cancel()
-            Log.d(TAG, "AppPager coroutine closed.")
+            1 -> CalibrationScreen(bluetoothService, viewModel)
         }
     }
 }
+
 
 @Composable
 fun CalibrationScreen(bluetoothService: BluetoothService, viewModel: MainActivity.SharedViewModel) {
