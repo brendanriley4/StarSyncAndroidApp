@@ -390,6 +390,7 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
             }
             if (modeCommand.isNotEmpty()) {
                 if (modeCommand == "P") {
+                    bluetoothService.sendData("M${xField.value},${yField.value},${zField.value},${dec.value}\n")
                     // Additional logic to handle the Pointing mode
                     val id = starIdInput.toIntOrNull()
                     val retrievedStarData =
@@ -398,7 +399,6 @@ fun MainScreen(latitudeState: MutableState<Double?>, longitudeState: MutableStat
                     val formattedAltitude = MainActivity.formatPointingData(retrievedStarData.altitude)
                     val formattedAzimuth = MainActivity.formatPointingData(retrievedStarData.azimuth)
                     val starDataString = "P$formattedAltitude,$formattedAzimuth\n"
-                    // val starDataString = "P${String.format("%07.4f", retrievedStarData.altitude)}${String.format("%07.4f", retrievedStarData.azimuth)}"
                     // Send serialized data over Bluetooth
                     bluetoothService.sendData(starDataString)
                     Log.d(TAG, "called sendData() - P")
